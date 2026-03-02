@@ -236,8 +236,6 @@ output = {
 }
 if usage:
     output["usage"] = usage
-if claude_max:
-    output["claude_max"] = claude_max
 
 # --- Claude Max usage (from scraper) ---
 claude_usage_path = os.path.join(os.path.expanduser("~"), ".config", "agent-dashboard", "claude-usage.json")
