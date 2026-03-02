@@ -21,16 +21,24 @@ if command -v gh &>/dev/null; then
         --limit 20 2>/dev/null) || prs_json="[]"
 fi
 
+# Read Anthropic admin key (if available)
+ADMIN_KEY_FILE="$HOME/.config/agent-dashboard/.anthropic-admin-key"
+ANTHROPIC_ADMIN_KEY=""
+if [ -f "$ADMIN_KEY_FILE" ]; then
+    ANTHROPIC_ADMIN_KEY=$(cat "$ADMIN_KEY_FILE" | tr -d '[:space:]')
+fi
+
 # Use Python to assemble everything
-python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" <<'PYEOF'
+python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$ANTHROPIC_ADMIN_KEY" <<'PYEOF'
 import sys, os, json, glob, signal
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 agent_dir = sys.argv[1]
 mordecai_state_path = sys.argv[2]
 mordecai_queue_path = sys.argv[3]
 output_path = sys.argv[4]
 prs_raw = sys.argv[5]
+admin_key = sys.argv[6] if len(sys.argv) > 6 else ""
 
 KNOWN_AGENTS = ["mordecai", "signet", "donut", "samantha", "quasar"]
 
@@ -86,6 +94,81 @@ try:
 except Exception:
     prs = []
 
+# --- Usage & Cost (Anthropic Admin API) ---
+usage = None
+if admin_key:
+    try:
+        import urllib.request, urllib.error
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_start = today_start - timedelta(days=7)
+        headers = {
+            "x-api-key": admin_key,
+            "anthropic-version": "2023-06-01",
+        }
+
+        def api_get(url):
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode())
+
+        # Today's usage
+        usage_today_url = (
+            "https://api.anthropic.com/v1/organizations/usage_report/messages"
+            f"?starting_at={today_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            "&bucket_width=1d"
+        )
+        today_data = api_get(usage_today_url)
+        today_input = sum(b.get("input_tokens", 0) for b in today_data.get("data", []))
+        today_output = sum(b.get("output_tokens", 0) for b in today_data.get("data", []))
+
+        # Weekly usage
+        usage_week_url = (
+            "https://api.anthropic.com/v1/organizations/usage_report/messages"
+            f"?starting_at={week_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            "&bucket_width=1d"
+        )
+        week_data = api_get(usage_week_url)
+        week_input = sum(b.get("input_tokens", 0) for b in week_data.get("data", []))
+        week_output = sum(b.get("output_tokens", 0) for b in week_data.get("data", []))
+
+        # Today's cost
+        cost_today_url = (
+            "https://api.anthropic.com/v1/organizations/cost_report"
+            f"?starting_at={today_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            "&bucket_width=1d"
+        )
+        cost_today_data = api_get(cost_today_url)
+        cost_today_usd = sum(
+            float(b.get("cost_usd", 0)) for b in cost_today_data.get("data", [])
+        )
+
+        # Weekly cost
+        cost_week_url = (
+            "https://api.anthropic.com/v1/organizations/cost_report"
+            f"?starting_at={week_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+            "&bucket_width=1d"
+        )
+        cost_week_data = api_get(cost_week_url)
+        cost_week_usd = sum(
+            float(b.get("cost_usd", 0)) for b in cost_week_data.get("data", [])
+        )
+
+        usage = {
+            "today": {"input_tokens": today_input, "output_tokens": today_output},
+            "week": {"input_tokens": week_input, "output_tokens": week_output},
+            "cost_today_usd": round(cost_today_usd, 2),
+            "cost_week_usd": round(cost_week_usd, 2),
+        }
+        print(f"Usage data fetched: today ${cost_today_usd:.2f}, week ${cost_week_usd:.2f}")
+    except Exception as e:
+        print(f"Usage fetch skipped: {e}", file=sys.stderr)
+        usage = None
+
 # --- Assemble ---
 output = {
     "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -94,6 +177,8 @@ output = {
     "queue": queue,
     "prs": prs,
 }
+if usage:
+    output["usage"] = usage
 
 with open(output_path, "w") as f:
     json.dump(output, f, indent=2)
