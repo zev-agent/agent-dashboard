@@ -146,6 +146,15 @@ tailwind.config = {
       <div id="pr-list" class="space-y-2 max-h-[420px] overflow-y-auto scroll-fade"></div>
     </div>
   </div>
+
+  <!-- Claude Max Usage Panel -->
+  <div id="claude-max-panel" class="card rounded-lg p-4 mt-4" style="display:none;">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xs font-semibold text-text-sec uppercase tracking-widest">Claude Max Usage</h2>
+      <span id="claude-max-fetched" class="text-[10px] text-text-sec"></span>
+    </div>
+    <div id="claude-max-bars" class="space-y-3"></div>
+  </div>
 </div>
 
 <script>
@@ -331,6 +340,52 @@ function renderPRs(prs) {
   }).join('');
 }
 
+function timeUntil(dateStr) {
+  if (!dateStr) return '';
+  const now = new Date();
+  const target = new Date(dateStr);
+  const diffMs = target - now;
+  if (diffMs <= 0) return 'now';
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return mins + 'm';
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hrs < 24) return hrs + 'h ' + remMins + 'm';
+  const days = Math.floor(hrs / 24);
+  const remHrs = hrs % 24;
+  return days + 'd ' + remHrs + 'h';
+}
+
+function usageBar(label, pct, resetStr) {
+  const resetText = resetStr ? ` — resets in ${timeUntil(resetStr)}` : '';
+  return `<div>
+    <div class="flex items-center justify-between mb-1">
+      <span class="text-xs text-text-pri">${label}</span>
+      <span class="text-[10px] text-text-sec">${pct}%${resetText}</span>
+    </div>
+    <div class="w-full h-2 rounded-full bg-surface-el overflow-hidden">
+      <div class="h-full rounded-full bg-accent" style="width:${Math.min(pct, 100)}%"></div>
+    </div>
+  </div>`;
+}
+
+function renderClaudeMax(data) {
+  const panel = document.getElementById('claude-max-panel');
+  if (!data || !data.usage) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  const u = data.usage;
+  const bars = [];
+  if (u.five_hour) bars.push(usageBar('5-Hour', u.five_hour.utilization, u.five_hour.resets_at));
+  if (u.seven_day) bars.push(usageBar('7-Day', u.seven_day.utilization, u.seven_day.resets_at));
+  if (u.seven_day_sonnet) bars.push(usageBar('Sonnet', u.seven_day_sonnet.utilization, u.seven_day_sonnet.resets_at));
+  if (u.seven_day_opus) bars.push(usageBar('Opus', u.seven_day_opus.utilization, u.seven_day_opus.resets_at));
+  document.getElementById('claude-max-bars').innerHTML = bars.join('');
+  document.getElementById('claude-max-fetched').textContent = data.fetched_at ? timeAgo(data.fetched_at) : '';
+}
+
 async function fetchStatus() {
   const indicator = document.getElementById('poll-indicator');
   try {
@@ -344,6 +399,7 @@ async function fetchStatus() {
     renderUsage(data.usage);
     renderQueue(data.queue);
     renderPRs(data.prs);
+    renderClaudeMax(data.claude_max);
 
     document.getElementById('last-update').textContent = 'Updated ' + timeAgo(data.generated_at);
     setTimeout(() => {
