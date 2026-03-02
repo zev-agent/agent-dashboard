@@ -76,6 +76,15 @@ claude_usage_path = sys.argv[7] if len(sys.argv) > 7 else ""
 
 KNOWN_AGENTS = ["mordecai", "signet", "donut", "samantha", "quasar"]
 
+AGENT_ROLES = {
+    "mordecai": "Engineering",
+    "signet": "Ops & Infrastructure",
+    "donut": "Product Vision",
+    "samantha": "Observability",
+    "quasar": "Security",
+    "zev": "Coordinator",
+}
+
 def pid_alive(pid):
     try:
         os.kill(pid, 0)
@@ -100,6 +109,7 @@ for name in KNOWN_AGENTS:
         status = "running" if pid and pid_alive(pid) else "idle"
         agents.append({
             "name": name,
+            "role": AGENT_ROLES.get(name, ""),
             "status": status,
             "description": data.get("description"),
             "workdir": data.get("workdir"),
@@ -109,6 +119,7 @@ for name in KNOWN_AGENTS:
     else:
         agents.append({
             "name": name,
+            "role": AGENT_ROLES.get(name, ""),
             "status": "offline",
             "description": None,
             "workdir": None,
