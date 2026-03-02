@@ -347,25 +347,24 @@ function timeUntil(dateStr) {
   const diffMs = target - now;
   if (diffMs <= 0) return 'now';
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 60) return mins + 'm';
+  if (mins < 60) return mins + ' min';
   const hrs = Math.floor(mins / 60);
   const remMins = mins % 60;
-  if (hrs < 24) return hrs + 'h ' + remMins + 'm';
+  if (hrs < 24) return hrs + ' hr ' + remMins + ' min';
   const days = Math.floor(hrs / 24);
   const remHrs = hrs % 24;
-  return days + 'd ' + remHrs + 'h';
+  return days + ' d ' + remHrs + ' hr';
 }
 
 function usageBar(label, pct, resetStr) {
-  const resetText = resetStr ? ` — resets in ${timeUntil(resetStr)}` : '';
-  return `<div>
-    <div class="flex items-center justify-between mb-1">
-      <span class="text-xs text-text-pri">${label}</span>
-      <span class="text-[10px] text-text-sec">${pct}%${resetText}</span>
+  const resetText = resetStr ? `Resets in ${timeUntil(resetStr)}` : '';
+  return `<div class="flex items-center gap-3">
+    <span class="text-xs text-text-pri w-14 shrink-0">${label}</span>
+    <div class="flex-1 h-2.5 rounded-full bg-surface-el overflow-hidden">
+      <div class="h-full rounded-full bg-accent transition-all" style="width:${Math.min(pct, 100)}%"></div>
     </div>
-    <div class="w-full h-2 rounded-full bg-surface-el overflow-hidden">
-      <div class="h-full rounded-full bg-accent" style="width:${Math.min(pct, 100)}%"></div>
-    </div>
+    <span class="text-xs text-text-pri w-10 text-right shrink-0">${pct}%</span>
+    <span class="text-[10px] text-text-sec w-36 shrink-0">${resetText}</span>
   </div>`;
 }
 
