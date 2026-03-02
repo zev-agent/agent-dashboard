@@ -47,15 +47,8 @@ print(json.dumps(prs))
     prs_json="$all_prs"
 fi
 
-# Read Anthropic admin key (if available)
-ADMIN_KEY_FILE="$HOME/.config/agent-dashboard/.anthropic-admin-key"
-ANTHROPIC_ADMIN_KEY=""
-if [ -f "$ADMIN_KEY_FILE" ]; then
-    ANTHROPIC_ADMIN_KEY=$(cat "$ADMIN_KEY_FILE" | tr -d '[:space:]')
-fi
-
 # Use Python to assemble everything
-python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$ANTHROPIC_ADMIN_KEY" "$TASK_TRACKER" <<'PYEOF'
+python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$TASK_TRACKER" <<'PYEOF'
 import sys, os, json, glob, signal
 from datetime import datetime, timezone, timedelta
 
@@ -64,10 +57,36 @@ mordecai_state_path = sys.argv[2]
 mordecai_queue_path = sys.argv[3]
 output_path = sys.argv[4]
 prs_raw = sys.argv[5]
-admin_key = sys.argv[6] if len(sys.argv) > 6 else ""
-task_tracker_path = sys.argv[7] if len(sys.argv) > 7 else ""
+task_tracker_path = sys.argv[6] if len(sys.argv) > 7 else ""
 
 KNOWN_AGENTS = ["mordecai", "signet", "donut", "samantha", "quasar"]
+
+# --- API Cache ---
+USAGE_CACHE_FILE = os.path.join(os.path.expanduser("~"), ".config", "agent-dashboard", "usage-cache.json")
+USAGE_CACHE_MAX_AGE = 900  # 15 minutes
+
+def load_usage_cache():
+    if os.path.exists(USAGE_CACHE_FILE):
+        try:
+            with open(USAGE_CACHE_FILE, "r") as f:
+                cache = json.load(f)
+            cached_at = datetime.fromisoformat(cache.get("cached_at", "1970-01-01T00:00:00+00:00"))
+            age = (datetime.now(timezone.utc) - cached_at).total_seconds()
+            if age < USAGE_CACHE_MAX_AGE:
+                return cache.get("data")
+        except:
+            pass
+    return None
+
+def save_usage_cache(data):
+    cache = {
+        "cached_at": datetime.now(timezone.utc).isoformat(),
+        "data": data
+    }
+    os.makedirs(os.path.dirname(USAGE_CACHE_FILE), exist_ok=True)
+    with open(USAGE_CACHE_FILE, "w") as f:
+        json.dump(cache, f)
+
 
 AGENT_ROLES = {
     "mordecai": "Engineering",
@@ -132,80 +151,6 @@ try:
 except Exception:
     prs = []
 
-# --- Usage & Cost (Anthropic Admin API) ---
-usage = None
-if admin_key:
-    try:
-        import urllib.request, urllib.error
-        now = datetime.now(timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_start = today_start - timedelta(days=7)
-        headers = {
-            "x-api-key": admin_key,
-            "anthropic-version": "2023-06-01",
-        }
-
-        def api_get(url):
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read().decode())
-
-        # Today's usage
-        usage_today_url = (
-            "https://api.anthropic.com/v1/organizations/usage_report/messages"
-            f"?starting_at={today_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            "&bucket_width=1d"
-        )
-        today_data = api_get(usage_today_url)
-        today_input = sum(b.get("input_tokens", 0) for b in today_data.get("data", []))
-        today_output = sum(b.get("output_tokens", 0) for b in today_data.get("data", []))
-
-        # Weekly usage
-        usage_week_url = (
-            "https://api.anthropic.com/v1/organizations/usage_report/messages"
-            f"?starting_at={week_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            "&bucket_width=1d"
-        )
-        week_data = api_get(usage_week_url)
-        week_input = sum(b.get("input_tokens", 0) for b in week_data.get("data", []))
-        week_output = sum(b.get("output_tokens", 0) for b in week_data.get("data", []))
-
-        # Today's cost
-        cost_today_url = (
-            "https://api.anthropic.com/v1/organizations/cost_report"
-            f"?starting_at={today_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            "&bucket_width=1d"
-        )
-        cost_today_data = api_get(cost_today_url)
-        cost_today_usd = sum(
-            float(b.get("cost_usd", 0)) for b in cost_today_data.get("data", [])
-        )
-
-        # Weekly cost
-        cost_week_url = (
-            "https://api.anthropic.com/v1/organizations/cost_report"
-            f"?starting_at={week_start.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            f"&ending_at={now.strftime('%Y-%m-%dT%H:%M:%SZ')}"
-            "&bucket_width=1d"
-        )
-        cost_week_data = api_get(cost_week_url)
-        cost_week_usd = sum(
-            float(b.get("cost_usd", 0)) for b in cost_week_data.get("data", [])
-        )
-
-        usage = {
-            "today": {"input_tokens": today_input, "output_tokens": today_output},
-            "week": {"input_tokens": week_input, "output_tokens": week_output},
-            "cost_today_usd": round(cost_today_usd, 2),
-            "cost_week_usd": round(cost_week_usd, 2),
-        }
-        print(f"Usage data fetched: today ${cost_today_usd:.2f}, week ${cost_week_usd:.2f}")
-    except Exception as e:
-        print(f"Usage fetch skipped: {e}", file=sys.stderr)
-        usage = None
 
 # --- Active Tasks ---
 active_tasks = []
@@ -234,8 +179,6 @@ output = {
     "prs": prs,
     "active_tasks": active_tasks,
 }
-if usage:
-    output["usage"] = usage
 
 # --- Claude Max usage (from scraper) ---
 claude_usage_path = os.path.join(os.path.expanduser("~"), ".config", "agent-dashboard", "claude-usage.json")
