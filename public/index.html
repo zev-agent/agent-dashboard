@@ -50,6 +50,8 @@ tailwind.config = {
   .queue-active { border-left: 3px solid #00d4ff; background: rgba(0,212,255,0.05); }
   .queue-merged { border-left: 3px solid #2dd4bf; opacity: 0.6; }
   .queue-queued { border-left: 3px solid rgba(0,212,255,0.08); }
+  .task-active { border-left: 3px solid #2dd4bf; }
+  .task-stale { border-left: 3px solid #f43f5e; background: rgba(244,63,94,0.05); }
   .scroll-fade { mask-image: linear-gradient(to bottom, black 90%, transparent 100%); }
 </style>
 </head>
@@ -127,6 +129,12 @@ tailwind.config = {
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Active Tasks Panel -->
+  <div id="active-tasks-panel" class="card rounded-lg p-4 mb-4" style="display:none;">
+    <h2 class="text-xs font-semibold text-text-sec uppercase tracking-widest mb-3">Active Tasks</h2>
+    <div id="active-tasks-list" class="space-y-1"></div>
   </div>
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -319,6 +327,36 @@ function renderUsage(usage) {
   document.getElementById('tokens-week-out').textContent = formatTokens(usage.week?.output_tokens);
 }
 
+function renderActiveTasks(tasks) {
+  const panel = document.getElementById('active-tasks-panel');
+  const container = document.getElementById('active-tasks-list');
+  if (!tasks || tasks.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  container.innerHTML = tasks.map(t => {
+    const isStale = t.status === 'stale';
+    const rowClass = isStale ? 'task-stale' : 'task-active';
+    const badge = isStale
+      ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-danger/20 text-danger font-medium">Stale</span>'
+      : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-success/20 text-success font-medium">Active</span>';
+    return `<div class="${rowClass} rounded px-3 py-2">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="text-xs font-semibold text-accent">${capitalize(t.agent)}</span>
+          <span class="text-xs text-text-pri truncate">${t.description}</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-xs text-text-sec">${runtime(t.spawned_at)}</span>
+          ${badge}
+        </div>
+      </div>
+      ${t.expected_output ? `<div class="text-[10px] text-text-sec mt-1 pl-0.5">Expected: ${t.expected_output}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function renderPRs(prs) {
   const container = document.getElementById('pr-list');
   if (!prs || prs.length === 0) {
@@ -398,6 +436,7 @@ async function fetchStatus() {
 
     renderAgents(data.agents);
     renderUsage(data.usage);
+    renderActiveTasks(data.active_tasks);
     renderQueue(data.queue);
     renderPRs(data.prs);
     renderClaudeMax(data.claude_max);
