@@ -330,11 +330,11 @@ function renderUsage(usage) {
 function renderActiveTasks(tasks) {
   const panel = document.getElementById('active-tasks-panel');
   const container = document.getElementById('active-tasks-list');
+  panel.style.display = '';  // Always show
   if (!tasks || tasks.length === 0) {
-    panel.style.display = 'none';
+    container.innerHTML = '<div class="text-xs text-text-sec text-center py-2">No active tasks</div>';
     return;
   }
-  panel.style.display = '';
   container.innerHTML = tasks.map(t => {
     const isStale = t.status === 'stale';
     const rowClass = isStale ? 'task-stale' : 'task-active';
