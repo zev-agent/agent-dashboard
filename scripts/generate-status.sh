@@ -10,16 +10,48 @@ CLAUDE_USAGE_FILE="$OUTPUT_DIR/claude-usage.json"
 AGENT_WATCHER_DIR="$HOME/.config/agent-watcher"
 MORDECAI_STATE="$HOME/.config/mordecai-watcher/state.json"
 MORDECAI_QUEUE="$HOME/.config/mordecai-watcher/queue.json"
-PR_REPO="BOS-Development/pinky.tools"
+PR_REPOS=(
+    "BOS-Development/pinky.tools"
+    "zev-agent/agent-dashboard"
+    "zev-agent/agent-ops"
+    "zev-agent/tool-github-poller"
+    "zev-agent/tool-github-webhook-proxy"
+    "zev-agent/tool-ci-triage"
+    "zev-agent/claude-usage-scraper"
+)
 
 mkdir -p "$OUTPUT_DIR"
 
-# Fetch PRs
+# Fetch PRs from all tracked repos
 prs_json="[]"
 if command -v gh &>/dev/null; then
-    prs_json=$(gh pr list --repo "$PR_REPO" --state open \
-        --json number,title,state,statusCheckRollup,url,author,createdAt,updatedAt \
-        --limit 20 2>/dev/null) || prs_json="[]"
+    all_prs="["
+    first=true
+    for repo in "${PR_REPOS[@]}"; do
+        repo_prs=$(gh pr list --repo "$repo" --state open \
+            --json number,title,state,statusCheckRollup,url,author,createdAt,updatedAt \
+            --limit 20 2>/dev/null) || repo_prs="[]"
+        # Add repo field to each PR and append to combined list
+        tagged=$(python3 -c "
+import json, sys
+prs = json.loads(sys.argv[1])
+for pr in prs:
+    pr['repo'] = sys.argv[2]
+print(json.dumps(prs))
+" "$repo_prs" "$repo" 2>/dev/null) || tagged="[]"
+        # Strip brackets and append
+        inner=$(echo "$tagged" | python3 -c "import sys,json; d=json.load(sys.stdin); print(json.dumps(d)[1:-1])")
+        if [ -n "$inner" ]; then
+            if [ "$first" = true ]; then
+                all_prs+="$inner"
+                first=false
+            else
+                all_prs+=",$inner"
+            fi
+        fi
+    done
+    all_prs+="]"
+    prs_json="$all_prs"
 fi
 
 # Read Anthropic admin key (if available)
