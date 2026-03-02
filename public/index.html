@@ -253,7 +253,7 @@ function renderQueue(queue) {
   }
 
   const active = queue.filter(q => ['implementing', 'pr_open', 'planning'].includes(q.status));
-  const queued = queue.filter(q => q.status === 'queued');
+  const queued = queue.filter(q => q.status === 'queued').sort((a, b) => (a.priority || 99) - (b.priority || 99));
   const completed = queue.filter(q => ['merged', 'done'].includes(q.status));
 
   let items = [...active, ...queued.slice(0, 5)];
