@@ -9,6 +9,7 @@ OUTPUT_FILE="$OUTPUT_DIR/status.json"
 AGENT_WATCHER_DIR="$HOME/.config/agent-watcher"
 MORDECAI_STATE="$HOME/.config/mordecai-watcher/state.json"
 MORDECAI_QUEUE="$HOME/.config/mordecai-watcher/queue.json"
+TASK_TRACKER="$HOME/.config/task-tracker/active-tasks.json"
 PR_REPO="BOS-Development/pinky.tools"
 
 mkdir -p "$OUTPUT_DIR"
@@ -29,7 +30,7 @@ if [ -f "$ADMIN_KEY_FILE" ]; then
 fi
 
 # Use Python to assemble everything
-python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$ANTHROPIC_ADMIN_KEY" <<'PYEOF'
+python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$ANTHROPIC_ADMIN_KEY" "$TASK_TRACKER" <<'PYEOF'
 import sys, os, json, glob, signal
 from datetime import datetime, timezone, timedelta
 
@@ -39,6 +40,7 @@ mordecai_queue_path = sys.argv[3]
 output_path = sys.argv[4]
 prs_raw = sys.argv[5]
 admin_key = sys.argv[6] if len(sys.argv) > 6 else ""
+task_tracker_path = sys.argv[7] if len(sys.argv) > 7 else ""
 
 KNOWN_AGENTS = ["mordecai", "signet", "donut", "samantha", "quasar"]
 
@@ -169,6 +171,24 @@ if admin_key:
         print(f"Usage fetch skipped: {e}", file=sys.stderr)
         usage = None
 
+# --- Active Tasks ---
+active_tasks = []
+if task_tracker_path and os.path.exists(task_tracker_path):
+    task_data = load_json(task_tracker_path)
+    if task_data and "tasks" in task_data:
+        stale_threshold = timedelta(hours=2)
+        current_time = datetime.now(timezone.utc)
+        for t in task_data["tasks"]:
+            if t.get("status") == "active":
+                spawned = datetime.strptime(t["spawned_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                task_age = current_time - spawned
+                pid = t.get("pid")
+                pid_ok = pid_alive(pid) if pid else False
+                status = "stale" if (task_age > stale_threshold and not pid_ok) else "active"
+                active_tasks.append({**t, "status": status})
+            elif t.get("status") == "stale":
+                active_tasks.append(t)
+
 # --- Assemble ---
 output = {
     "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -176,9 +196,16 @@ output = {
     "mordecai_state": mordecai_state,
     "queue": queue,
     "prs": prs,
+    "active_tasks": active_tasks,
 }
 if usage:
     output["usage"] = usage
+
+# --- Claude Max usage (from scraper) ---
+claude_usage_path = os.path.join(os.path.expanduser("~"), ".config", "agent-dashboard", "claude-usage.json")
+claude_data = load_json(claude_usage_path)
+if claude_data:
+    output["claude_max"] = claude_data
 
 with open(output_path, "w") as f:
     json.dump(output, f, indent=2)
