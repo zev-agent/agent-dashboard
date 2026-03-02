@@ -1,0 +1,6 @@
+[Unit]
+Description=Agent Dashboard Status Generator
+
+[Service]
+Type=oneshot
+ExecStart=/home/benjamin/.openclaw/workspace/agent-dashboard/scripts/generate-status.sh

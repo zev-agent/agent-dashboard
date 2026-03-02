@@ -1,0 +1,14 @@
+[Unit]
+Description=Agent Dashboard Web Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/benjamin/.openclaw/workspace/agent-dashboard/scripts/serve-dashboard.sh
+WorkingDirectory=/home/benjamin/.openclaw/workspace/agent-dashboard
+Restart=on-failure
+RestartSec=5
+Environment=DASHBOARD_PORT=4001
+
+[Install]
+WantedBy=default.target
