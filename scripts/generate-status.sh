@@ -6,6 +6,7 @@ set -euo pipefail
 
 OUTPUT_DIR="$HOME/.config/agent-dashboard"
 OUTPUT_FILE="$OUTPUT_DIR/status.json"
+CLAUDE_USAGE_FILE="$OUTPUT_DIR/claude-usage.json"
 AGENT_WATCHER_DIR="$HOME/.config/agent-watcher"
 MORDECAI_STATE="$HOME/.config/mordecai-watcher/state.json"
 MORDECAI_QUEUE="$HOME/.config/mordecai-watcher/queue.json"
@@ -29,7 +30,7 @@ if [ -f "$ADMIN_KEY_FILE" ]; then
 fi
 
 # Use Python to assemble everything
-python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$ANTHROPIC_ADMIN_KEY" <<'PYEOF'
+python3 - "$AGENT_WATCHER_DIR" "$MORDECAI_STATE" "$MORDECAI_QUEUE" "$OUTPUT_FILE" "$prs_json" "$ANTHROPIC_ADMIN_KEY" "$CLAUDE_USAGE_FILE" <<'PYEOF'
 import sys, os, json, glob, signal
 from datetime import datetime, timezone, timedelta
 
@@ -39,6 +40,7 @@ mordecai_queue_path = sys.argv[3]
 output_path = sys.argv[4]
 prs_raw = sys.argv[5]
 admin_key = sys.argv[6] if len(sys.argv) > 6 else ""
+claude_usage_path = sys.argv[7] if len(sys.argv) > 7 else ""
 
 KNOWN_AGENTS = ["mordecai", "signet", "donut", "samantha", "quasar"]
 
@@ -169,6 +171,16 @@ if admin_key:
         print(f"Usage fetch skipped: {e}", file=sys.stderr)
         usage = None
 
+# --- Claude Max Usage (from scraper) ---
+claude_max = None
+if claude_usage_path and os.path.exists(claude_usage_path):
+    try:
+        claude_max = load_json(claude_usage_path)
+        if claude_max:
+            print(f"Claude Max usage loaded (fetched {claude_max.get('fetched_at', 'unknown')})")
+    except Exception as e:
+        print(f"Claude Max usage load failed: {e}", file=sys.stderr)
+
 # --- Assemble ---
 output = {
     "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -179,6 +191,8 @@ output = {
 }
 if usage:
     output["usage"] = usage
+if claude_max:
+    output["claude_max"] = claude_max
 
 with open(output_path, "w") as f:
     json.dump(output, f, indent=2)
