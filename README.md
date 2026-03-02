@@ -32,10 +32,12 @@ serve-dashboard.sh  →  symlinks into public/  →  index.html polls it
 | Mordecai state | `~/.config/mordecai-watcher/state.json` |
 | Task queue | `~/.config/mordecai-watcher/queue.json` |
 | Open PRs | `gh pr list --repo BOS-Development/pinky.tools` |
+| API Usage/Cost | Anthropic Admin API (key at `~/.config/agent-dashboard/.anthropic-admin-key`) |
 
 ### Dashboard Views
 
 - **Agent Status** — all 5 agents with status, current task, runtime, last update
+- **API Usage & Cost** — today/7-day token counts and USD cost (hidden if no admin key)
 - **Task Queue** — active/queued items, collapsible completed section
 - **PR Tracker** — open PRs with CI check status
 
