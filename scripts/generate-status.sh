@@ -180,12 +180,6 @@ output = {
     "active_tasks": active_tasks,
 }
 
-# --- Claude Max usage (from scraper) ---
-claude_usage_path = os.path.join(os.path.expanduser("~"), ".config", "agent-dashboard", "claude-usage.json")
-claude_data = load_json(claude_usage_path)
-if claude_data:
-    output["claude_max"] = claude_data
-
 with open(output_path, "w") as f:
     json.dump(output, f, indent=2)
 
